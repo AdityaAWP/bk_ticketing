@@ -65,9 +65,21 @@ public function store(Request $request)
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, string $id)
+public function update(Request $request, string $id)
     {
-        //
+        $payload = $request->validate([
+            'nama' => 'required|string|max:255',
+        ]);
+
+        if (!isset($payload['nama'])) {
+            return redirect()->route('categories.index')->with('error', 'Nama kategori wajib diisi.');
+        }
+
+        $category = Kategori::findOrFail($id);
+        $category->nama = $payload['nama'];
+        $category->save();
+
+        return redirect()->route('admin.categories.index')->with('success', 'Kategori berhasil diperbarui.');
     }
 
     /**
