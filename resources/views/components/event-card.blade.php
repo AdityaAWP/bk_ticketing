@@ -11,7 +11,9 @@
 
     // Safe image URL: use external URL if provided, otherwise use asset (storage path)
     $imageUrl =
-        $image && filter_var($image, FILTER_VALIDATE_URL) ? $image : asset('storage/' . ($image ?: 'konser.jpeg'));
+        $image && filter_var($image, FILTER_VALIDATE_URL)
+            ? $image
+            : asset('images/events/' . ($image ?: 'konser.jpeg'));
 @endphp
 
 <a href="{{ $href ?? '#' }}" class="block">

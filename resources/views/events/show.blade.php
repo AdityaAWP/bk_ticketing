@@ -16,7 +16,7 @@
                 <div class="card bg-base-100 shadow">
                     <figure>
                         <img src="{{ $event->gambar
-                            ? asset('storage/' . $event->gambar)
+                            ? asset('images/events/' . $event->gambar)
                             : 'https://img.daisyui.com/images/stock/photo-1606107557195-0e29a4b5b4aa.webp' }}"
                             alt="{{ $event->judul }}" class="w-full h-96 object-cover" />
                     </figure>
@@ -47,11 +47,17 @@
 
                         <div class="mt-4 space-y-4">
                             @forelse($event->tikets as $tiket)
-                                <div class="card card-side shadow-sm p-4 items-center">
+                                <div
+                                    class="card card-side shadow-sm p-4 items-center {{ $tiket->stok == 0 ? 'opacity-60' : '' }}">
                                     <div class="flex-1">
-                                        <h4 class="font-bold">{{ $tiket->tipe }}</h4>
-                                        <p class="text-sm text-gray-500">Stok: <span
-                                                id="stock-{{ $tiket->id }}">{{ $tiket->stok }}</span></p>
+                                        <h4 class="font-bold">
+                                            {{ $tiket->tipe }}
+                                            @if ($tiket->stok == 0)
+                                                <span class="badge badge-error text-white ml-2">Habis</span>
+                                            @endif
+                                        </h4>
+                                        <p class="text-sm {{ $tiket->stok == 0 ? 'text-error' : 'text-gray-500' }}">
+                                            Stok: <span id="stock-{{ $tiket->id }}">{{ $tiket->stok }}</span></p>
                                         <p class="text-sm mt-2">{{ $tiket->keterangan ?? '' }}</p>
                                     </div>
 
@@ -60,20 +66,26 @@
                                             {{ $tiket->harga ? 'Rp ' . number_format($tiket->harga, 0, ',', '.') : 'Gratis' }}
                                         </div>
 
-                                        <div class="mt-3 flex items-center justify-end gap-2">
-                                            <button type="button" class="btn btn-sm btn-outline" data-action="dec"
-                                                data-id="{{ $tiket->id }}" aria-label="Kurangi satu">−</button>
-                                            <input id="qty-{{ $tiket->id }}" type="number" min="0"
-                                                max="{{ $tiket->stok }}" value="0"
-                                                class="input input-bordered w-16 text-center"
-                                                data-id="{{ $tiket->id }}" />
-                                            <button type="button" class="btn btn-sm btn-outline" data-action="inc"
-                                                data-id="{{ $tiket->id }}" aria-label="Tambah satu">+</button>
-                                        </div>
+                                        @if ($tiket->stok > 0)
+                                            <div class="mt-3 flex items-center justify-end gap-2">
+                                                <button type="button" class="btn btn-sm btn-outline" data-action="dec"
+                                                    data-id="{{ $tiket->id }}" aria-label="Kurangi satu">−</button>
+                                                <input id="qty-{{ $tiket->id }}" type="number" min="0"
+                                                    max="{{ $tiket->stok }}" value="0"
+                                                    class="input input-bordered w-16 text-center"
+                                                    data-id="{{ $tiket->id }}" />
+                                                <button type="button" class="btn btn-sm btn-outline" data-action="inc"
+                                                    data-id="{{ $tiket->id }}" aria-label="Tambah satu">+</button>
+                                            </div>
 
-                                        <div class="text-sm text-gray-500 mt-2">Subtotal: <span
-                                                id="subtotal-{{ $tiket->id }}">Rp 0</span>
-                                        </div>
+                                            <div class="text-sm text-gray-500 mt-2">Subtotal: <span
+                                                    id="subtotal-{{ $tiket->id }}">Rp 0</span>
+                                            </div>
+                                        @else
+                                            <div class="mt-3 text-sm text-error font-medium">
+                                                Stok tidak tersedia
+                                            </div>
+                                        @endif
                                     </div>
                                 </div>
                             @empty
@@ -240,6 +252,20 @@
 
             // Checkout modal
             window.openCheckout = function() {
+                // Validate stock before opening modal
+                let stockErrors = [];
+                Object.values(tickets).forEach(t => {
+                    const qty = Number(document.getElementById('qty-' + t.id).value || 0);
+                    if (qty > 0 && qty > t.stock) {
+                        stockErrors.push(`${t.tipe}: Stok tersedia hanya ${t.stock}, Anda memilih ${qty}`);
+                    }
+                });
+
+                if (stockErrors.length > 0) {
+                    alert('⚠️ Stok tidak mencukupi!\n\n' + stockErrors.join('\n'));
+                    return;
+                }
+
                 const modal = document.getElementById('checkout_modal');
                 // populate modal items
                 const modalItems = document.getElementById('modalItems');
@@ -276,15 +302,31 @@
                 btn.setAttribute('disabled', 'disabled');
                 btn.textContent = 'Memproses...';
 
-                // gather items
+                // gather items and validate stock
                 const items = [];
+                let stockErrors = [];
                 Object.values(tickets).forEach(t => {
                     const qty = Number(document.getElementById('qty-' + t.id).value || 0);
-                    if (qty > 0) items.push({
-                        tiket_id: t.id,
-                        jumlah: qty
-                    });
+                    if (qty > 0) {
+                        items.push({
+                            tiket_id: t.id,
+                            jumlah: qty
+                        });
+                        // Double-check stock on confirm
+                        if (qty > t.stock) {
+                            stockErrors.push(
+                                `${t.tipe}: Stok tersedia hanya ${t.stock}, Anda memilih ${qty}`
+                            );
+                        }
+                    }
                 });
+
+                if (stockErrors.length > 0) {
+                    alert('⚠️ Stok tidak mencukupi!\n\n' + stockErrors.join('\n'));
+                    btn.removeAttribute('disabled');
+                    btn.textContent = 'Konfirmasi';
+                    return;
+                }
 
                 if (items.length === 0) {
                     alert('Tidak ada tiket dipilih');
@@ -309,17 +351,26 @@
                         })
                     });
 
+                    const data = await res.json();
+
                     if (!res.ok) {
-                        const text = await res.text();
-                        throw new Error(text || 'Gagal membuat pesanan');
+                        // Handle stock error from server
+                        const errorMessage = data.message || 'Gagal membuat pesanan';
+                        if (errorMessage.toLowerCase().includes('stok')) {
+                            alert('⚠️ ' + errorMessage);
+                        } else {
+                            alert('Terjadi kesalahan: ' + errorMessage);
+                        }
+                        btn.removeAttribute('disabled');
+                        btn.textContent = 'Konfirmasi';
+                        return;
                     }
 
-                    const data = await res.json();
                     // redirect to orders list
                     window.location.href = data.redirect || '{{ route('orders.index') }}';
                 } catch (err) {
                     console.log(err);
-                    alert('Terjadi kesalahan saat memproses pesanan: ' + err.message);
+                    alert('Terjadi kesalahan saat memproses pesanan. Silakan coba lagi.');
                     btn.removeAttribute('disabled');
                     btn.textContent = 'Konfirmasi';
                 }
